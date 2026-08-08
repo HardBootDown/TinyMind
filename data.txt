@@ -1,0 +1,8 @@
+the capital of france is paris
+the capital of germany is berlin
+the capital of italy is rome
+the capital of spain is madrid
+a black dog can bark
+a brown dog can run
+a small cat can jump
+a large cat can sleep

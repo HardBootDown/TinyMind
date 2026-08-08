@@ -1,0 +1,907 @@
+# TinyMind
+#
+# A very small neural network built from scratch with NumPy.
+#
+# The goal of this project is NOT to build a useful AI.
+# The goal is to see, step by step, how:
+#
+#     text
+#       ↓
+#     tokens
+#       ↓
+#     token IDs
+#       ↓
+#     embeddings
+#       ↓
+#     neural network
+#       ↓
+#     logits
+#       ↓
+#     probabilities
+#       ↓
+#     prediction
+#       ↓
+#     loss
+#       ↓
+#     gradients
+#       ↓
+#     weight updates
+#
+# Right now our network is only doing:
+#
+#     output = input × weights + bias
+#
+# This is called a linear transformation.
+
+
+from pathlib import Path
+
+import numpy as np
+
+
+def create_target_vector(
+    target_token_id: int,
+    vocabulary_size: int,
+) -> np.ndarray:
+    """Create a one-hot target vector."""
+
+    target = np.zeros(vocabulary_size)
+
+    target[target_token_id] = 1.0
+
+    return target
+
+
+def cross_entropy_loss(
+    probabilities: np.ndarray,
+    target_token_id: int,
+) -> float:
+    """
+    Calculate cross-entropy loss for one prediction.
+    """
+
+    probability = probabilities[target_token_id]
+
+    # Prevent log(0)
+    probability = max(probability, 1e-12)
+
+    return -np.log(probability)
+
+
+def create_training_pairs(
+    encoded_sentences: list[list[int]],
+) -> list[tuple[list[int], int]]:
+    """
+    Create input/target pairs for next-token prediction.
+    """
+
+    training_pairs = []
+
+    for sentence in encoded_sentences:
+
+        for i in range(1, len(sentence)):
+
+            input_tokens = sentence[:i]
+            target_token = sentence[i]
+
+            training_pairs.append(
+                (
+                    input_tokens,
+                    target_token
+                )
+            )
+
+    return training_pairs
+
+
+def predict_token(
+    probabilities: np.ndarray,
+    vocabulary: dict[str, int],
+) -> str:
+    """Return the token with highest probability."""
+
+    best_token_id = np.argmax(probabilities)
+
+    for token, token_id in vocabulary.items():
+
+        if token_id == best_token_id:
+
+            return token
+
+    raise ValueError("Prediction token ID was not found in vocabulary.")
+
+
+def softmax(values: np.ndarray) -> np.ndarray:
+    """Convert logits into probabilities."""
+
+    exp_values = np.exp(values - np.max(values))
+
+    return exp_values / np.sum(exp_values)
+
+
+def create_output_layer(
+    input_size: int,
+    vocabulary_size: int,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Create weights and biases for the output layer."""
+
+    weights = np.random.randn(
+        input_size,
+        vocabulary_size,
+    )
+
+    biases = np.random.randn(
+        vocabulary_size,
+    )
+
+    return weights, biases
+
+
+def relu(values: np.ndarray) -> np.ndarray:
+    """Apply the ReLU activation function."""
+
+    return np.maximum(0, values)
+
+
+def create_layer(
+    input_size: int,
+    output_size: int,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Create random weights and biases for a neural network layer."""
+
+    weights = np.random.randn(
+        input_size,
+        output_size,
+    )
+
+    biases = np.random.randn(
+        output_size,
+    )
+
+    return weights, biases
+
+
+def create_embedding_matrix(
+    vocabulary_size: int,
+    embedding_dimension: int,
+) -> np.ndarray:
+    """Create a randomly initialized embedding matrix."""
+
+    return np.random.randn(
+        vocabulary_size,
+        embedding_dimension,
+    )
+
+
+def load_sentences(file_path: str) -> list[str]:
+    """Load non-empty sentences from the training data file."""
+
+    path = Path(file_path)
+
+    if not path.exists():
+
+        raise FileNotFoundError(
+            f"Training file not found: {path.resolve()}"
+        )
+
+    return [
+        line.strip()
+        for line in path.read_text(
+            encoding="utf-8"
+        ).splitlines()
+        if line.strip()
+    ]
+
+
+def tokenize(sentence: str) -> list[str]:
+    """Convert a sentence into individual tokens."""
+
+    return sentence.lower().split()
+
+
+def build_vocabulary(
+    tokenized_sentences: list[list[str]],
+) -> dict[str, int]:
+    """Create a vocabulary mapping each unique token to an integer ID."""
+
+    vocabulary: dict[str, int] = {}
+
+    for sentence in tokenized_sentences:
+
+        for token in sentence:
+
+            if token not in vocabulary:
+
+                vocabulary[token] = len(vocabulary)
+
+    return vocabulary
+
+
+def encode(
+    tokenized_sentences: list[list[str]],
+    vocabulary: dict[str, int],
+) -> list[list[int]]:
+    """Convert tokens into their corresponding vocabulary IDs."""
+
+    return [
+        [vocabulary[token] for token in sentence]
+        for sentence in tokenized_sentences
+    ]
+
+
+def main() -> None:
+
+    # ---------------------------------------------------------
+    # 1. Load the training data
+    # ---------------------------------------------------------
+
+    sentences = load_sentences("data.txt")
+
+    print(f"Loaded {len(sentences)} training sentences.")
+    print()
+
+
+    # ---------------------------------------------------------
+    # 2. Tokenize the sentences
+    # ---------------------------------------------------------
+
+    tokenized_sentences = [
+        tokenize(sentence)
+        for sentence in sentences
+    ]
+
+    print("TOKENIZED SENTENCES")
+    print("===================")
+
+    for tokens in tokenized_sentences:
+
+        print(tokens)
+
+    print()
+
+
+    # ---------------------------------------------------------
+    # 3. Build the vocabulary
+    # ---------------------------------------------------------
+
+    vocabulary = build_vocabulary(tokenized_sentences)
+
+    print("VOCABULARY")
+    print("==========")
+
+    for token, token_id in vocabulary.items():
+
+        print(f"{token_id:2}  {token}")
+
+    print()
+
+
+    # ---------------------------------------------------------
+    # 4. Convert tokens to IDs
+    # ---------------------------------------------------------
+
+    encoded_sentences = encode(
+        tokenized_sentences,
+        vocabulary,
+    )
+
+    print("ENCODED SENTENCES")
+    print("=================")
+
+    for sentence in encoded_sentences:
+
+        print(sentence)
+
+
+    # ---------------------------------------------------------
+    # 5. Create the embedding matrix
+    # ---------------------------------------------------------
+
+    embedding_dimension = 4
+
+    embedding_matrix = create_embedding_matrix(
+        len(vocabulary),
+        embedding_dimension,
+    )
+
+    print()
+    print("EMBEDDING MATRIX")
+    print("================")
+    print(f"Shape: {embedding_matrix.shape}")
+    print()
+
+    for token, token_id in vocabulary.items():
+
+        vector = embedding_matrix[token_id]
+
+        print(
+            f"{token_id:2}  "
+            f"{token:8}  "
+            f"{vector}"
+        )
+
+
+    # ---------------------------------------------------------
+    # 6. Get the embedding vector for "france"
+    # ---------------------------------------------------------
+
+    france_id = vocabulary["france"]
+
+    france_vector = embedding_matrix[france_id]
+
+    print()
+    print("FRANCE VECTOR")
+    print("=============")
+
+    print(f"Token ID: {france_id}")
+
+    print(f"Vector:   {france_vector}")
+
+
+    # ---------------------------------------------------------
+    # 7. Create our first neural network layer
+    # ---------------------------------------------------------
+
+    input_size = embedding_dimension
+
+    output_size = 6
+
+    weights, biases = create_layer(
+        input_size,
+        output_size,
+    )
+
+    print()
+    print("NEURAL NETWORK LAYER")
+    print("====================")
+
+    print(f"Input size:  {input_size}")
+
+    print(f"Output size: {output_size}")
+
+    print(f"Weights:     {weights.shape}")
+
+    print(f"Biases:      {biases.shape}")
+
+
+    print()
+    print("WEIGHTS")
+    print("=======")
+
+    print(weights)
+
+
+    print()
+    print("BIASES")
+    print("======")
+
+    print(biases)
+
+
+    # ---------------------------------------------------------
+    # 8. Pass the France vector through the layer
+    #
+    #              France vector
+    #                    ↓
+    #              Matrix multiply
+    #                    ↓
+    #                 weights
+    #                    ↓
+    #                  bias
+    #                    ↓
+    #               layer output
+    #                    ↓
+    #                  ReLU
+    # ---------------------------------------------------------
+
+    context_vector = france_vector
+
+    layer_output = (
+        context_vector @ weights
+        + biases
+    )
+
+    activated_output = relu(layer_output)
+
+
+    print()
+    print("LAYER OUTPUT")
+    print("============")
+
+    print(layer_output)
+
+
+    print()
+    print("AFTER RELU")
+    print("==========")
+
+    print(activated_output)
+
+
+    # ---------------------------------------------------------
+    # 9. Create output layer
+    # ---------------------------------------------------------
+
+    output_weights, output_biases = create_output_layer(
+        len(activated_output),
+        len(vocabulary),
+    )
+
+    print()
+    print("OUTPUT LAYER")
+    print("============")
+
+    print(
+        f"Input size:  "
+        f"{len(activated_output)}"
+    )
+
+    print(
+        f"Output size: "
+        f"{len(vocabulary)}"
+    )
+
+    print(
+        f"Weights:     "
+        f"{output_weights.shape}"
+    )
+
+    print(
+        f"Biases:      "
+        f"{output_biases.shape}"
+    )
+
+
+    # ---------------------------------------------------------
+    # 10. Forward pass through output layer
+    # ---------------------------------------------------------
+
+    logits = (
+        activated_output @ output_weights
+        + output_biases
+    )
+
+    print()
+    print("LOGITS")
+    print("======")
+
+    print(logits)
+
+
+    # ---------------------------------------------------------
+    # 11. Convert logits to probabilities
+    # ---------------------------------------------------------
+
+    probabilities = softmax(logits)
+
+    print()
+    print("# PROBABILITIES")
+    print()
+
+    for token, token_id in vocabulary.items():
+
+        print(
+            f"{token:8} "
+            f"{probabilities[token_id]:.6f}"
+        )
+
+
+    print()
+    print("Probability total:")
+
+    print(np.sum(probabilities))
+
+
+    # ---------------------------------------------------------
+    # 12. Make a prediction
+    # ---------------------------------------------------------
+
+    prediction = predict_token(
+        probabilities,
+        vocabulary,
+    )
+
+    print()
+    print("PREDICTION")
+    print("==========")
+
+    print(prediction)
+
+
+    # ---------------------------------------------------------
+    # 13. Create training pairs
+    # ---------------------------------------------------------
+
+    training_pairs = create_training_pairs(
+        encoded_sentences
+    )
+
+    print()
+    print("# TRAINING PAIRS")
+    print()
+
+    for input_tokens, target in training_pairs:
+
+        print(
+            input_tokens,
+            "=>",
+            target
+        )
+
+
+    # ---------------------------------------------------------
+    # 14. Define our target
+    #
+    # We are deliberately teaching the network:
+    #
+    #     france -> paris
+    #
+    # ---------------------------------------------------------
+
+    target_token_id = vocabulary["paris"]
+
+
+    # ---------------------------------------------------------
+    # 15. Calculate loss
+    # ---------------------------------------------------------
+
+    loss = cross_entropy_loss(
+        probabilities,
+        target_token_id,
+    )
+
+
+    reverse_vocabulary = {
+        token_id: token
+        for token, token_id in vocabulary.items()
+    }
+
+
+    print()
+    print("# LOSS")
+    print()
+
+    print(
+        f"Target token: "
+        f"{target_token_id}"
+    )
+
+    print(
+        f"Target word:  "
+        f"{reverse_vocabulary[target_token_id]}"
+    )
+
+    print(
+        f"Probability:  "
+        f"{probabilities[target_token_id]:.6f}"
+    )
+
+    print(
+        f"Loss:         "
+        f"{loss:.6f}"
+    )
+
+
+    # ---------------------------------------------------------
+    # 16. Create target vector
+    # ---------------------------------------------------------
+
+    target = create_target_vector(
+        target_token_id,
+        len(vocabulary),
+    )
+
+
+    # ---------------------------------------------------------
+    # 17. OUTPUT GRADIENT
+    #
+    # For softmax + cross entropy:
+    #
+    #     gradient = probabilities - target
+    #
+    # This tells us how each output should change.
+    # ---------------------------------------------------------
+
+    output_gradient = (
+        probabilities - target
+    )
+
+
+    print()
+    print("# OUTPUT GRADIENT")
+    print("=================")
+
+    for token, token_id in vocabulary.items():
+
+        print(
+            f"{token:8} "
+            f"{output_gradient[token_id]: .6f}"
+        )
+
+
+    # ---------------------------------------------------------
+    # 18. OUTPUT LAYER GRADIENT
+    # ---------------------------------------------------------
+
+    output_weights_gradient = np.outer(
+        activated_output,
+        output_gradient,
+    )
+
+    output_bias_gradient = output_gradient
+
+
+    print()
+    print("# OUTPUT WEIGHTS GRADIENT")
+    print("========================")
+
+    print(output_weights_gradient)
+
+
+    # ---------------------------------------------------------
+    # 19. BACKPROPAGATE INTO HIDDEN LAYER
+    #
+    # Send the output error backward through the
+    # output weights.
+    #
+    # output_gradient:
+    #
+    #     shape = (24,)
+    #
+    # output_weights.T:
+    #
+    #     shape = (24, 6)
+    #
+    # result:
+    #
+    #     shape = (6,)
+    # ---------------------------------------------------------
+
+    hidden_gradient = (
+        output_gradient @ output_weights.T
+    )
+
+
+    # ---------------------------------------------------------
+    # 20. BACKPROPAGATE THROUGH ReLU
+    #
+    # ReLU:
+    #
+    #     max(0, x)
+    #
+    # Its derivative is:
+    #
+    #     1 if x > 0
+    #     0 if x <= 0
+    #
+    # We use layer_output because it contains the
+    # values BEFORE ReLU was applied.
+    # ---------------------------------------------------------
+
+    relu_gradient = (
+        layer_output > 0
+    ).astype(float)
+
+    hidden_gradient *= relu_gradient
+
+
+    print()
+    print("# HIDDEN GRADIENT")
+    print("================")
+
+    print(hidden_gradient)
+
+
+    # ---------------------------------------------------------
+    # 21. HIDDEN LAYER WEIGHT GRADIENT
+    # ---------------------------------------------------------
+
+    hidden_weights_gradient = np.outer(
+        context_vector,
+        hidden_gradient,
+    )
+
+    hidden_bias_gradient = hidden_gradient
+
+
+    print()
+    print("# HIDDEN WEIGHTS GRADIENT")
+    print("=========================")
+
+    print(hidden_weights_gradient)
+
+
+    print()
+    print("# HIDDEN BIAS GRADIENT")
+    print("======================")
+
+    print(hidden_bias_gradient)
+
+
+    # ---------------------------------------------------------
+    # 22. Save a couple of output weights so we can
+    #     see the change.
+    # ---------------------------------------------------------
+
+    before_output_the_weight = (
+        output_weights[0, 0]
+    )
+
+    before_output_paris_weight = (
+        output_weights[0, 5]
+    )
+
+
+    # ---------------------------------------------------------
+    # 23. Save a couple of hidden weights so we can
+    #     see the change.
+    # ---------------------------------------------------------
+
+    before_hidden_weight_0 = (
+        weights[0, 0]
+    )
+
+    before_hidden_weight_1 = (
+        weights[0, 1]
+    )
+
+
+    # ---------------------------------------------------------
+    # 24. Learning rate
+    # ---------------------------------------------------------
+
+    learning_rate = 0.01
+
+
+    # ---------------------------------------------------------
+    # 25. UPDATE OUTPUT LAYER
+    # ---------------------------------------------------------
+
+    output_weights -= (
+        learning_rate
+        * output_weights_gradient
+    )
+
+    output_biases -= (
+        learning_rate
+        * output_bias_gradient
+    )
+
+
+    # ---------------------------------------------------------
+    # 26. UPDATE HIDDEN LAYER
+    # ---------------------------------------------------------
+
+    weights -= (
+        learning_rate
+        * hidden_weights_gradient
+    )
+
+    biases -= (
+        learning_rate
+        * hidden_bias_gradient
+    )
+
+
+    # ---------------------------------------------------------
+    # 27. Show the weight updates
+    # ---------------------------------------------------------
+
+    print()
+    print("# OUTPUT WEIGHT UPDATE")
+    print("=====================")
+
+    print(
+        f"Hidden 0 -> the:  "
+        f"{before_output_the_weight:.6f}"
+        f" -> "
+        f"{output_weights[0, 0]:.6f}"
+    )
+
+    print(
+        f"Hidden 0 -> paris: "
+        f"{before_output_paris_weight:.6f}"
+        f" -> "
+        f"{output_weights[0, 5]:.6f}"
+    )
+
+
+    print()
+    print("# HIDDEN WEIGHT UPDATE")
+    print("======================")
+
+    print(
+        f"Input 0 -> Hidden 0: "
+        f"{before_hidden_weight_0:.6f}"
+        f" -> "
+        f"{weights[0, 0]:.6f}"
+    )
+
+    print(
+        f"Input 0 -> Hidden 1: "
+        f"{before_hidden_weight_1:.6f}"
+        f" -> "
+        f"{weights[0, 1]:.6f}"
+    )
+
+
+    # ---------------------------------------------------------
+    # 28. SECOND FORWARD PASS
+    #
+    # We now run the SAME France vector through the
+    # network again, but this time the weights have
+    # been updated.
+    # ---------------------------------------------------------
+
+    new_layer_output = (
+        context_vector @ weights
+        + biases
+    )
+
+    new_activated_output = relu(
+        new_layer_output
+    )
+
+
+    new_logits = (
+        new_activated_output
+        @ output_weights
+        + output_biases
+    )
+
+
+    new_probabilities = softmax(
+        new_logits
+    )
+
+
+    # ---------------------------------------------------------
+    # 29. Calculate the new loss
+    # ---------------------------------------------------------
+
+    new_loss = cross_entropy_loss(
+        new_probabilities,
+        target_token_id,
+    )
+
+
+    # ---------------------------------------------------------
+    # 30. Make the new prediction
+    # ---------------------------------------------------------
+
+    new_prediction_id = np.argmax(
+        new_probabilities
+    )
+
+    new_prediction = (
+        reverse_vocabulary[new_prediction_id]
+    )
+
+
+    # ---------------------------------------------------------
+    # 31. Show the result after ONE training update
+    # ---------------------------------------------------------
+
+    print()
+    print("# AFTER ONE TRAINING UPDATE")
+    print("===========================")
+
+    print(
+        f"Paris probability: "
+        f"{new_probabilities[target_token_id]:.6f}"
+    )
+
+    print(
+        f"New loss: "
+        f"{new_loss:.6f}"
+    )
+
+    print(
+        f"New prediction: "
+        f"{new_prediction}"
+    )
+
+
+if __name__ == "__main__":
+
+    main()
