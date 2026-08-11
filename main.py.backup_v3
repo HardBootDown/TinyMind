@@ -1,9 +1,3 @@
-#
-#
-#
-#
-#.\.venv\Scripts\Activate.ps1
-
 import numpy as np
 
 
@@ -12,10 +6,10 @@ import numpy as np
 # ============================================================
 
 EMBEDDING_SIZE = 4
-HIDDEN_SIZE = 16
+HIDDEN_SIZE = 16 #neurons
 
 LEARNING_RATE = 0.001
-EPOCHS = 1000
+TRAINING_EPOCHS = 1000
 
 PRINT_EVERY = 10
 
@@ -25,6 +19,7 @@ PRINT_EVERY = 10
 # ============================================================
 
 def tokenize(sentence):
+
     return sentence.lower().split()
 
 
@@ -33,7 +28,9 @@ def tokenize(sentence):
 # ============================================================
 
 def load_training_data(filename):
+
     with open(filename, "r", encoding="utf-8") as file:
+
         sentences = [
             line.strip()
             for line in file
@@ -52,8 +49,11 @@ def build_vocabulary(tokenized_sentences):
     vocabulary = []
 
     for sentence in tokenized_sentences:
+
         for token in sentence:
+
             if token not in vocabulary:
+
                 vocabulary.append(token)
 
     token_to_id = {
@@ -93,7 +93,10 @@ def encode_sentences(tokenized_sentences, token_to_id):
 # CREATE EMBEDDING MATRIX
 # ============================================================
 
-def create_embedding_matrix(vocabulary_size, embedding_size):
+def create_embedding_matrix(
+    vocabulary_size,
+    embedding_size
+):
 
     return np.random.randn(
         vocabulary_size,
@@ -106,15 +109,15 @@ def create_embedding_matrix(vocabulary_size, embedding_size):
 #
 # Example:
 #
-# the capital of france is paris
+# [the, capital, of, france, is, paris]
 #
 # becomes:
 #
-# the                  -> capital
-# the capital          -> of
-# the capital of       -> france
-# the capital of france -> is
-# the capital of france is -> paris
+# the     -> capital
+# capital -> of
+# of      -> france
+# france  -> is
+# is      -> paris
 # ============================================================
 
 def create_training_pairs(encoded_sentences):
@@ -123,15 +126,16 @@ def create_training_pairs(encoded_sentences):
 
     for sentence in encoded_sentences:
 
-        for i in range(1, len(sentence)):
+        for index in range(len(sentence) - 1):
 
-            input_tokens = sentence[:i]
-            target_token = sentence[i]
+            input_token_id = sentence[index]
+
+            target_token_id = sentence[index + 1]
 
             training_pairs.append(
                 (
-                    input_tokens,
-                    target_token
+                    input_token_id,
+                    target_token_id
                 )
             )
 
@@ -143,6 +147,7 @@ def create_training_pairs(encoded_sentences):
 # ============================================================
 
 def relu(x):
+
     return np.maximum(0, x)
 
 
@@ -152,32 +157,12 @@ def relu(x):
 
 def softmax(x):
 
-    # Subtracting the maximum makes the calculation
-    # numerically more stable.
-
+    # Numerical stability
     shifted = x - np.max(x)
 
     exp_values = np.exp(shifted)
 
     return exp_values / np.sum(exp_values)
-
-
-# ============================================================
-# CROSS-ENTROPY LOSS
-# ============================================================
-
-def cross_entropy_loss(probabilities, target_token_id):
-
-    target_probability = probabilities[target_token_id]
-
-    # Prevent log(0)
-
-    target_probability = max(
-        target_probability,
-        1e-12
-    )
-
-    return -np.log(target_probability)
 
 
 # ============================================================
@@ -256,22 +241,23 @@ def train_one_example(
     # LOSS
     # --------------------------------------------------------
 
-    loss = cross_entropy_loss(
-        probabilities,
-        target_token_id
+    target_probability = probabilities[target_token_id]
+
+    loss = -np.log(
+        target_probability + 1e-12
     )
 
     # --------------------------------------------------------
     # OUTPUT GRADIENT
     #
-    # softmax + cross entropy:
+    # Softmax + cross entropy:
     #
-    # gradient = probabilities - target
+    # gradient = probability - target
     # --------------------------------------------------------
 
     output_gradient = probabilities.copy()
 
-    output_gradient[target_token_id] -= 1.0
+    output_gradient[target_token_id] -= 1
 
     # --------------------------------------------------------
     # OUTPUT WEIGHT GRADIENT
@@ -322,18 +308,69 @@ def train_one_example(
     hidden_bias_gradient = hidden_gradient
 
     # --------------------------------------------------------
-    # INPUT / EMBEDDING GRADIENT
+    # EMBEDDING GRADIENT
     #
-    # This tells us how the input embedding itself needs
-    # to change.
+    # The hidden layer receives:
+    #
+    # input_vector @ hidden_weights
+    #
+    # Therefore:
+    #
+    # dL/d(input_vector)
+    # =
+    # hidden_gradient @ hidden_weights.T
     # --------------------------------------------------------
 
-    input_gradient = (
+    embedding_gradient = (
         hidden_gradient @ hidden_weights.T
     )
 
     # --------------------------------------------------------
-    # WEIGHT UPDATES
+    # RETURN GRADIENTS
+    #
+    # We update the parameters outside this function.
+    # --------------------------------------------------------
+
+    return (
+        loss,
+        probabilities,
+        output_weights_gradient,
+        output_bias_gradient,
+        hidden_weights_gradient,
+        hidden_bias_gradient,
+        embedding_gradient
+    )
+
+
+# ============================================================
+# UPDATE PARAMETERS
+# ============================================================
+
+def update_parameters(
+    embedding_matrix,
+    input_token_id,
+    embedding_gradient,
+    hidden_weights,
+    hidden_biases,
+    hidden_weights_gradient,
+    hidden_bias_gradient,
+    output_weights,
+    output_biases,
+    output_weights_gradient,
+    output_bias_gradient
+):
+
+    # --------------------------------------------------------
+    # UPDATE EMBEDDING
+    # --------------------------------------------------------
+
+    embedding_matrix[input_token_id] -= (
+        LEARNING_RATE
+        * embedding_gradient
+    )
+
+    # --------------------------------------------------------
+    # UPDATE HIDDEN LAYER
     # --------------------------------------------------------
 
     hidden_weights -= (
@@ -346,6 +383,10 @@ def train_one_example(
         * hidden_bias_gradient
     )
 
+    # --------------------------------------------------------
+    # UPDATE OUTPUT LAYER
+    # --------------------------------------------------------
+
     output_weights -= (
         LEARNING_RATE
         * output_weights_gradient
@@ -356,44 +397,24 @@ def train_one_example(
         * output_bias_gradient
     )
 
-    return (
-        loss,
-        probabilities,
-        input_gradient
-    )
-
 
 # ============================================================
-# PREDICT TOKEN
+# PREDICT NEXT WORD
 # ============================================================
 
-def predict_token(probabilities, id_to_token):
-
-    predicted_token_id = int(
-        np.argmax(probabilities)
-    )
-
-    return id_to_token[predicted_token_id]
-
-
-# ============================================================
-# EVALUATE ONE TRAINING PAIR
-#
-# IMPORTANT:
-# This does NOT update the network.
-#
-# It only performs a forward pass so we can inspect
-# what the network currently believes.
-# ============================================================
-
-def evaluate_pair(
-    input_vector,
-    target_token_id,
+def predict_next_word(
+    input_token_id,
+    embedding_matrix,
     hidden_weights,
     hidden_biases,
     output_weights,
-    output_biases
+    output_biases,
+    id_to_token
 ):
+
+    input_vector = (
+        embedding_matrix[input_token_id]
+    )
 
     (
         hidden_raw,
@@ -408,24 +429,17 @@ def evaluate_pair(
         output_biases
     )
 
-    loss = cross_entropy_loss(
-        probabilities,
-        target_token_id
-    )
-
     predicted_token_id = int(
         np.argmax(probabilities)
     )
 
-    target_probability = (
-        probabilities[target_token_id]
+    predicted_word = (
+        id_to_token[predicted_token_id]
     )
 
     return (
-        loss,
-        probabilities,
-        predicted_token_id,
-        target_probability
+        predicted_word,
+        probabilities
     )
 
 
@@ -438,7 +452,7 @@ def main():
     # --------------------------------------------------------
     # RANDOM SEED
     #
-    # This makes each run reproducible.
+    # Makes our experiment reproducible.
     # --------------------------------------------------------
 
     np.random.seed(42)
@@ -447,7 +461,9 @@ def main():
     # LOAD DATA
     # --------------------------------------------------------
 
-    sentences = load_training_data("data.txt")
+    sentences = load_training_data(
+        "data.txt"
+    )
 
     print(
         f"Loaded {len(sentences)} training sentences."
@@ -466,8 +482,10 @@ def main():
     # VOCABULARY
     # --------------------------------------------------------
 
-    token_to_id, id_to_token = build_vocabulary(
-        tokenized_sentences
+    token_to_id, id_to_token = (
+        build_vocabulary(
+            tokenized_sentences
+        )
     )
 
     vocabulary_size = len(token_to_id)
@@ -486,7 +504,7 @@ def main():
     )
 
     # --------------------------------------------------------
-    # TRAINING PAIRS
+    # CREATE TRAINING PAIRS
     # --------------------------------------------------------
 
     training_pairs = create_training_pairs(
@@ -498,29 +516,7 @@ def main():
     )
 
     # --------------------------------------------------------
-    # SHOW TRAINING PAIRS
-    # --------------------------------------------------------
-
-    print()
-    print("# TRAINING PAIRS")
-    print()
-
-    for input_tokens, target_token in training_pairs:
-
-        input_words = [
-            id_to_token[token_id]
-            for token_id in input_tokens
-        ]
-
-        target_word = id_to_token[target_token]
-
-        print(
-            f"{' '.join(input_words):30}"
-            f" -> {target_word}"
-        )
-
-    # --------------------------------------------------------
-    # CREATE EMBEDDING MATRIX
+    # EMBEDDING MATRIX
     # --------------------------------------------------------
 
     embedding_matrix = create_embedding_matrix(
@@ -529,7 +525,7 @@ def main():
     )
 
     # --------------------------------------------------------
-    # CREATE NETWORK
+    # HIDDEN LAYER
     # --------------------------------------------------------
 
     hidden_weights = np.random.randn(
@@ -541,6 +537,10 @@ def main():
         HIDDEN_SIZE
     )
 
+    # --------------------------------------------------------
+    # OUTPUT LAYER
+    # --------------------------------------------------------
+
     output_weights = np.random.randn(
         HIDDEN_SIZE,
         vocabulary_size
@@ -551,6 +551,28 @@ def main():
     )
 
     # --------------------------------------------------------
+    # SHOW TRAINING PAIRS
+    # --------------------------------------------------------
+
+    print()
+    print("# TRAINING PAIRS")
+    print()
+
+    for input_token_id, target_token_id in training_pairs:
+
+        input_word = (
+            id_to_token[input_token_id]
+        )
+
+        target_word = (
+            id_to_token[target_token_id]
+        )
+
+        print(
+            f"{input_word:8} -> {target_word}"
+        )
+
+    # --------------------------------------------------------
     # TRAINING
     # --------------------------------------------------------
 
@@ -558,61 +580,76 @@ def main():
     print("# TRAINING")
     print()
 
-    for epoch in range(1, EPOCHS + 1):
+    for epoch in range(
+        1,
+        TRAINING_EPOCHS + 1
+    ):
+
+        # ----------------------------------------------------
+        # SHUFFLE TRAINING PAIRS
+        #
+        # This prevents the network from always seeing
+        # the examples in exactly the same order.
+        # ----------------------------------------------------
+
+        shuffled_pairs = training_pairs.copy()
+
+        np.random.shuffle(
+            shuffled_pairs
+        )
 
         total_loss = 0.0
 
         # ----------------------------------------------------
-        # TRAIN ON EVERY TRAINING PAIR
+        # TRAIN ON EVERY PAIR
         # ----------------------------------------------------
 
-        for input_tokens, target_token in training_pairs:
+        for (
+            input_token_id,
+            target_token_id
+        ) in shuffled_pairs:
 
-            # -----------------------------------------------
-            # CURRENT INPUT
-            #
-            # For this version we use the LAST token in the
-            # input sequence as the actual network input.
-            #
-            # This preserves our current architecture.
-            # Later we will replace this with real context.
-            # -----------------------------------------------
-
-            input_token_id = input_tokens[-1]
-
-            input_vector = embedding_matrix[
-                input_token_id
-            ].copy()
-
-            # -----------------------------------------------
-            # TRAIN
-            # -----------------------------------------------
+            # Get the current embedding
+            input_vector = (
+                embedding_matrix[input_token_id]
+            )
 
             (
                 loss,
                 probabilities,
-                input_gradient
+                output_weights_gradient,
+                output_bias_gradient,
+                hidden_weights_gradient,
+                hidden_bias_gradient,
+                embedding_gradient
             ) = train_one_example(
                 input_vector,
-                target_token,
+                target_token_id,
                 hidden_weights,
                 hidden_biases,
                 output_weights,
                 output_biases
             )
 
-            total_loss += loss
+            # ------------------------------------------------
+            # UPDATE ALL PARAMETERS
+            # ------------------------------------------------
 
-            # -----------------------------------------------
-            # UPDATE THE INPUT TOKEN'S EMBEDDING
-            # -----------------------------------------------
-
-            embedding_matrix[
-                input_token_id
-            ] -= (
-                LEARNING_RATE
-                * input_gradient
+            update_parameters(
+                embedding_matrix,
+                input_token_id,
+                embedding_gradient,
+                hidden_weights,
+                hidden_biases,
+                hidden_weights_gradient,
+                hidden_bias_gradient,
+                output_weights,
+                output_biases,
+                output_weights_gradient,
+                output_bias_gradient
             )
+
+            total_loss += loss
 
         # ----------------------------------------------------
         # AVERAGE LOSS
@@ -624,35 +661,6 @@ def main():
         )
 
         # ----------------------------------------------------
-        # MONITOR FRANCE -> PARIS
-        # ----------------------------------------------------
-
-        france_id = token_to_id["france"]
-        paris_id = token_to_id["paris"]
-
-        france_vector = (
-            embedding_matrix[france_id]
-        )
-
-        (
-            france_loss,
-            france_probabilities,
-            france_prediction_id,
-            france_paris_probability
-        ) = evaluate_pair(
-            france_vector,
-            paris_id,
-            hidden_weights,
-            hidden_biases,
-            output_weights,
-            output_biases
-        )
-
-        france_prediction = id_to_token[
-            france_prediction_id
-        ]
-
-        # ----------------------------------------------------
         # PRINT PROGRESS
         # ----------------------------------------------------
 
@@ -661,171 +669,98 @@ def main():
             or epoch % PRINT_EVERY == 0
         ):
 
-            print(
-                f"Epoch {epoch:4d} | "
-                f"Average Loss: {average_loss:8.4f} | "
-                f"France -> Paris: "
-                f"{france_paris_probability:.6f} | "
-                f"Prediction: {france_prediction}"
-            )
-
-    # ========================================================
-    # FINAL EVALUATION
-    # ========================================================
-
-    print()
-    print("# FINAL EVALUATION")
-    print()
-
-    correct_predictions = 0
-    total_loss = 0.0
-
-    results = []
-
-    for input_tokens, target_token in training_pairs:
-
-        # ----------------------------------------------------
-        # Use the last token as the current model's input.
-        # ----------------------------------------------------
-
-        input_token_id = input_tokens[-1]
-
-        input_vector = (
-            embedding_matrix[input_token_id]
-        )
-
-        (
-            loss,
-            probabilities,
-            predicted_token_id,
-            target_probability
-        ) = evaluate_pair(
-            input_vector,
-            target_token,
-            hidden_weights,
-            hidden_biases,
-            output_weights,
-            output_biases
-        )
-
-        input_word = id_to_token[
-            input_token_id
-        ]
-
-        target_word = id_to_token[
-            target_token
-        ]
-
-        predicted_word = id_to_token[
-            predicted_token_id
-        ]
-
-        correct = (
-            predicted_token_id
-            == target_token
-        )
-
-        if correct:
-            correct_predictions += 1
-
-        total_loss += loss
-
-        results.append(
             (
-                input_word,
-                target_word,
                 predicted_word,
-                target_probability,
-                loss,
-                correct
+                probabilities
+            ) = predict_next_word(
+                token_to_id["france"],
+                embedding_matrix,
+                hidden_weights,
+                hidden_biases,
+                output_weights,
+                output_biases,
+                id_to_token
             )
-        )
+
+            paris_probability = (
+                probabilities[
+                    token_to_id["paris"]
+                ]
+            )
+
+            print(
+                f"Epoch {epoch:3d} | "
+                f"Loss: {average_loss:8.4f} | "
+                f"France -> Paris: "
+                f"{paris_probability:.6f} | "
+                f"Prediction: {predicted_word}"
+            )
 
     # --------------------------------------------------------
-    # FINAL METRICS
+    # FINAL TESTS
     # --------------------------------------------------------
-
-    average_loss = (
-        total_loss
-        / len(training_pairs)
-    )
-
-    accuracy = (
-        correct_predictions
-        / len(training_pairs)
-    )
-
-    print(
-        f"Total training pairs: {len(training_pairs)}"
-    )
-
-    print(
-        f"Correct predictions:  "
-        f"{correct_predictions}"
-    )
-
-    print(
-        f"Accuracy:             "
-        f"{accuracy:.2%}"
-    )
-
-    print(
-        f"Average loss:         "
-        f"{average_loss:.6f}"
-    )
-
-    # ========================================================
-    # FINAL PREDICTION TABLE
-    # ========================================================
 
     print()
     print("# FINAL PREDICTIONS")
     print()
 
-    print(
-        f"{'INPUT':12}"
-        f"{'TARGET':12}"
-        f"{'PREDICTION':14}"
-        f"{'PROBABILITY':13}"
-        f"{'LOSS':10}"
-        f"STATUS"
-    )
+    test_words = [
+        "the",
+        "capital",
+        "of",
+        "france",
+        "germany",
+        "italy",
+        "spain",
+        "black",
+        "brown",
+        "dog",
+        "can",
+        "small",
+        "large",
+        "cat"
+    ]
 
-    print("-" * 75)
+    for word in test_words:
 
-    for (
-        input_word,
-        target_word,
-        predicted_word,
-        target_probability,
-        loss,
-        correct
-    ) in results:
+        input_token_id = (
+            token_to_id[word]
+        )
 
-        status = (
-            "OK"
-            if correct
-            else "WRONG"
+        (
+            predicted_word,
+            probabilities
+        ) = predict_next_word(
+            input_token_id,
+            embedding_matrix,
+            hidden_weights,
+            hidden_biases,
+            output_weights,
+            output_biases,
+            id_to_token
+        )
+
+        probability = (
+            probabilities[
+                token_to_id[predicted_word]
+            ]
         )
 
         print(
-            f"{input_word:12}"
-            f"{target_word:12}"
-            f"{predicted_word:14}"
-            f"{target_probability:12.6f} "
-            f"{loss:9.4f} "
-            f"{status}"
+            f"{word:8} -> "
+            f"{predicted_word:8} "
+            f"({probability:.6f})"
         )
 
-    # ========================================================
-    # LEARNED EMBEDDINGS
-    # ========================================================
+    # --------------------------------------------------------
+    # SHOW SOME LEARNED EMBEDDINGS
+    # --------------------------------------------------------
 
     print()
     print("# LEARNED EMBEDDINGS")
     print()
 
-    interesting_words = [
+    for word in [
         "france",
         "paris",
         "germany",
@@ -834,15 +769,13 @@ def main():
         "rome",
         "spain",
         "madrid"
-    ]
-
-    for word in interesting_words:
+    ]:
 
         token_id = token_to_id[word]
 
-        vector = embedding_matrix[
-            token_id
-        ]
+        vector = (
+            embedding_matrix[token_id]
+        )
 
         print(
             f"{word:8} "
@@ -850,5 +783,10 @@ def main():
         )
 
 
+# ============================================================
+# PROGRAM ENTRY POINT
+# ============================================================
+
 if __name__ == "__main__":
+
     main()
